@@ -37,3 +37,9 @@ plotly>=5.18.0
 # ============================================================================
 # Lightweight web framework for building dashboards
 flask>=3.0.0
+
+# ============================================================================
+# Scheduling and Monitoring
+# ============================================================================
+# Advanced Python scheduler for running periodic tasks
+APScheduler>=3.10.0

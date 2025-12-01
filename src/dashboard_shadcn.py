@@ -29,6 +29,14 @@ from src.audit_report import AuditReportGenerator
 # Import mindmap functions
 from src.mindmap import generate_mindmap_data, get_depth_color, get_section_icon, extract_section_name
 
+# Import monitoring functions
+try:
+    from src.monitor import get_monitor_status, get_trend_chart_data
+    MONITOR_AVAILABLE = True
+except ImportError:
+    MONITOR_AVAILABLE = False
+    logger.warning("Monitor module not available")
+
 # ---------------------------------------------------------------------------
 # Logging Setup
 # ---------------------------------------------------------------------------
@@ -2478,6 +2486,97 @@ def visualizations_tree():
             return jsonify({"error": "Failed to generate tree hierarchy"}), 500
     
     return send_file(output_file, mimetype="text/html")
+
+
+# ---------------------------------------------------------------------------
+# Monitoring API Endpoints
+# ---------------------------------------------------------------------------
+
+@app.route("/api/monitor/status")
+def api_monitor_status():
+    """Get current monitoring status."""
+    if not MONITOR_AVAILABLE:
+        return jsonify({
+            "available": False,
+            "message": "Monitor module not available",
+        })
+    
+    try:
+        status = get_monitor_status()
+        status["available"] = True
+        return jsonify(status)
+    except Exception as e:
+        logger.error(f"Error getting monitor status: {e}")
+        return jsonify({
+            "available": True,
+            "error": str(e),
+        }), 500
+
+
+@app.route("/api/monitor/trends")
+def api_monitor_trends():
+    """Get trend data for charts."""
+    if not MONITOR_AVAILABLE:
+        return jsonify({
+            "available": False,
+            "dates": [],
+            "total_pages": [],
+            "net_changes": [],
+        })
+    
+    try:
+        days = request.args.get("days", 30, type=int)
+        trend_data = get_trend_chart_data(days)
+        trend_data["available"] = True
+        return jsonify(trend_data)
+    except Exception as e:
+        logger.error(f"Error getting trend data: {e}")
+        return jsonify({
+            "available": True,
+            "error": str(e),
+            "dates": [],
+            "total_pages": [],
+            "net_changes": [],
+        }), 500
+
+
+@app.route("/api/monitor/run-crawl", methods=["POST"])
+def api_run_crawl():
+    """Trigger a manual crawl."""
+    if not MONITOR_AVAILABLE:
+        return jsonify({
+            "success": False,
+            "message": "Monitor module not available",
+        }), 400
+    
+    try:
+        from src.monitor import WebsiteMonitor
+        
+        # Load config
+        config_path = Path(__file__).parent.parent / "config.json"
+        if config_path.exists():
+            with open(config_path) as f:
+                config = json.load(f)
+            base_url = config.get("crawl_settings", {}).get("base_url", "https://tsm.ac.in")
+        else:
+            base_url = "https://tsm.ac.in"
+        
+        monitor = WebsiteMonitor(base_url)
+        result = monitor.run_manual_crawl()
+        
+        return jsonify({
+            "success": True,
+            "crawl_id": result.get("crawl_id"),
+            "total_pages": result.get("total_pages", 0),
+            "status": result.get("status"),
+            "timestamp": result.get("timestamp"),
+        })
+    except Exception as e:
+        logger.error(f"Error running manual crawl: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+        }), 500
 
 
 # ---------------------------------------------------------------------------
