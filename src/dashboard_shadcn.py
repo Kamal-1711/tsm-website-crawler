@@ -26,6 +26,9 @@ from flask import Flask, Response, jsonify, render_template_string, request, sen
 # Import audit report generator
 from src.audit_report import AuditReportGenerator
 
+# Import mindmap functions
+from src.mindmap import generate_mindmap_data, get_depth_color, get_section_icon, extract_section_name
+
 # ---------------------------------------------------------------------------
 # Logging Setup
 # ---------------------------------------------------------------------------
@@ -365,6 +368,264 @@ def create_status_donut_chart(stats: Dict[str, Any]) -> str:
     return fig.to_json()
 
 
+def create_mindmap_plotly(df: pd.DataFrame, max_nodes: int = 100) -> str:
+    """Create an interactive mind map visualization using Plotly with radial layout."""
+    if df.empty:
+        return "{}"
+
+    df_limited = df.head(max_nodes)
+
+    # Build graph
+    G = nx.DiGraph()
+    
+    for _, row in df_limited.iterrows():
+        url = row["url"]
+        parent = row.get("parent_url", "") or ""
+        
+        G.add_node(url, **{
+            "title": row.get("title", "") or extract_section_name(url),
+            "depth": int(row.get("depth", 0)),
+            "child_count": int(row.get("child_count", 0)),
+            "status_code": int(row.get("status_code", 200)),
+        })
+        
+        if parent and parent in [r["url"] for _, r in df_limited.iterrows()]:
+            G.add_edge(parent, url)
+
+    # Find root nodes
+    root_nodes = [n for n in G.nodes() if G.in_degree(n) == 0]
+    root = root_nodes[0] if root_nodes else (list(G.nodes())[0] if G.nodes() else None)
+
+    if not root:
+        return "{}"
+
+    # Calculate radial positions
+    import math
+    
+    def calculate_radial_positions(graph, root_node):
+        """Calculate positions in a radial layout."""
+        pos = {}
+        visited = set()
+        
+        # BFS to assign positions
+        levels = {}
+        queue = [(root_node, 0)]
+        visited.add(root_node)
+        
+        while queue:
+            node, level = queue.pop(0)
+            if level not in levels:
+                levels[level] = []
+            levels[level].append(node)
+            
+            for neighbor in graph.successors(node):
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    queue.append((neighbor, level + 1))
+        
+        # Position nodes radially
+        pos[root_node] = (0, 0)
+        
+        for level, nodes in levels.items():
+            if level == 0:
+                continue
+            
+            radius = level * 1.5
+            angle_step = 2 * math.pi / max(len(nodes), 1)
+            
+            for i, node in enumerate(nodes):
+                angle = i * angle_step - math.pi / 2
+                x = radius * math.cos(angle)
+                y = radius * math.sin(angle)
+                pos[node] = (x, y)
+        
+        return pos
+
+    try:
+        pos = calculate_radial_positions(G, root)
+    except Exception:
+        pos = nx.spring_layout(G, k=2, iterations=50, seed=42)
+
+    # Create edge traces
+    edge_x, edge_y = [], []
+    
+    for edge in G.edges():
+        if edge[0] in pos and edge[1] in pos:
+            x0, y0 = pos[edge[0]]
+            x1, y1 = pos[edge[1]]
+            edge_x.extend([x0, x1, None])
+            edge_y.extend([y0, y1, None])
+
+    edge_trace = go.Scatter(
+        x=edge_x,
+        y=edge_y,
+        line=dict(width=1, color="#475569"),
+        hoverinfo="none",
+        mode="lines",
+        name="Connections",
+    )
+
+    # Create node traces by depth
+    node_traces = []
+    depth_names = {
+        0: "🏠 Homepage",
+        1: "📁 Main Sections",
+        2: "📄 Subsections",
+        3: "📝 Detail Pages",
+        4: "📎 Deep Pages",
+    }
+    
+    for depth in range(6):
+        nodes_at_depth = [n for n in G.nodes() if G.nodes[n].get("depth", 0) == depth and n in pos]
+        
+        if not nodes_at_depth:
+            continue
+        
+        node_x, node_y, node_text, node_size = [], [], [], []
+        
+        for node in nodes_at_depth:
+            x, y = pos[node]
+            node_x.append(x)
+            node_y.append(y)
+            
+            data = G.nodes[node]
+            title = data.get("title", "")[:40]
+            child_count = data.get("child_count", 0)
+            status = data.get("status_code", 200)
+            icon = get_section_icon(title)
+            
+            hover_text = (
+                f"<b>{icon} {title}</b><br>"
+                f"<span style='color:#94A3B8'>URL:</span> {node[:60]}{'...' if len(node) > 60 else ''}<br>"
+                f"<span style='color:#94A3B8'>Depth:</span> {depth}<br>"
+                f"<span style='color:#94A3B8'>Children:</span> {child_count}<br>"
+                f"<span style='color:#94A3B8'>Status:</span> {status}"
+            )
+            node_text.append(hover_text)
+            
+            # Size based on child count
+            size = 25 + min(child_count * 2, 45)
+            node_size.append(size)
+        
+        depth_name = depth_names.get(depth, f"Level {depth}")
+        
+        node_trace = go.Scatter(
+            x=node_x,
+            y=node_y,
+            mode="markers",
+            hoverinfo="text",
+            text=node_text,
+            name=depth_name,
+            marker=dict(
+                color=get_depth_color(depth),
+                size=node_size,
+                line=dict(width=2, color="#0F172A"),
+                opacity=0.9,
+            ),
+        )
+        node_traces.append(node_trace)
+
+    # Create figure
+    fig = go.Figure(
+        data=[edge_trace] + node_traces,
+        layout=go.Layout(
+            showlegend=True,
+            legend=dict(
+                font=dict(color="#E2E8F0", size=12),
+                bgcolor="rgba(30, 41, 59, 0.9)",
+                bordercolor="#475569",
+                borderwidth=1,
+                x=0.02,
+                y=0.98,
+                xanchor="left",
+                yanchor="top",
+            ),
+            hovermode="closest",
+            paper_bgcolor="#0F172A",
+            plot_bgcolor="#0F172A",
+            xaxis=dict(
+                showgrid=False,
+                zeroline=False,
+                showticklabels=False,
+            ),
+            yaxis=dict(
+                showgrid=False,
+                zeroline=False,
+                showticklabels=False,
+            ),
+            margin=dict(l=20, r=20, t=20, b=20),
+        ),
+    )
+
+    return fig.to_json()
+
+
+def create_treemap_chart(df: pd.DataFrame) -> str:
+    """Create a treemap visualization of the website structure."""
+    if df.empty:
+        return "{}"
+
+    # Group by depth and extract section from URL
+    section_data = []
+    
+    for _, row in df.iterrows():
+        url = row["url"]
+        depth = int(row.get("depth", 0))
+        child_count = int(row.get("child_count", 0))
+        title = row.get("title", "") or extract_section_name(url)
+        
+        # Extract first path segment as section
+        try:
+            path_parts = [p for p in urlparse(url).path.split("/") if p]
+            section = path_parts[0].replace("-", " ").replace("_", " ").title() if path_parts else "Homepage"
+        except Exception:
+            section = "Other"
+        
+        section_data.append({
+            "section": section[:20],
+            "title": title[:30],
+            "depth": depth,
+            "children": child_count + 1,
+        })
+
+    section_df = pd.DataFrame(section_data)
+    
+    # Aggregate by section
+    agg_df = section_df.groupby("section").agg({
+        "children": "sum",
+        "depth": "mean",
+    }).reset_index()
+    
+    agg_df = agg_df.nlargest(12, "children")
+
+    colors = ["#3B82F6", "#8B5CF6", "#EC4899", "#F59E0B", "#10B981", "#06B6D4", 
+              "#6366F1", "#84CC16", "#F97316", "#14B8A6", "#A855F7", "#EF4444"]
+
+    fig = go.Figure(
+        data=[
+            go.Treemap(
+                labels=agg_df["section"].tolist(),
+                parents=[""] * len(agg_df),
+                values=agg_df["children"].tolist(),
+                textinfo="label+value",
+                textfont=dict(size=14, color="#E2E8F0"),
+                marker=dict(
+                    colors=colors[:len(agg_df)],
+                    line=dict(width=2, color="#0F172A"),
+                ),
+                hovertemplate="<b>%{label}</b><br>Pages: %{value}<extra></extra>",
+            )
+        ],
+        layout=go.Layout(
+            margin=dict(l=10, r=10, t=10, b=10),
+            paper_bgcolor="#0F172A",
+            plot_bgcolor="#0F172A",
+        ),
+    )
+
+    return fig.to_json()
+
+
 # ---------------------------------------------------------------------------
 # HTML Template with shadcn/ui Components
 # ---------------------------------------------------------------------------
@@ -573,6 +834,9 @@ SHADCN_DASHBOARD_HTML = '''
                 </button>
                 <button role="tab" aria-selected="false" data-tab="data" class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-300 transition-colors whitespace-nowrap">
                     <i class="fas fa-table mr-2"></i>Data Table
+                </button>
+                <button role="tab" aria-selected="false" data-tab="mindmap" class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-300 transition-colors whitespace-nowrap">
+                    <i class="fas fa-sitemap mr-2"></i>Mind Map
                 </button>
             </nav>
         </div>
@@ -1335,6 +1599,170 @@ SHADCN_DASHBOARD_HTML = '''
                 </div>
             </div>
         </div>
+        
+        <!-- ============================================================ -->
+        <!-- TAB 6: MIND MAP -->
+        <!-- ============================================================ -->
+        <div class="tab-content" id="tab-mindmap">
+            <!-- Mind Map Controls -->
+            <div class="flex flex-wrap gap-3 items-center mb-6">
+                <div class="flex gap-2">
+                    <button onclick="setMindmapView('radial')" id="viewRadial" class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium transition-colors">
+                        <i class="fas fa-circle-notch mr-2"></i>Radial View
+                    </button>
+                    <button onclick="setMindmapView('tree')" id="viewTree" class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium transition-colors">
+                        <i class="fas fa-sitemap mr-2"></i>Tree View
+                    </button>
+                </div>
+                <div class="flex-1"></div>
+                <div class="flex gap-2">
+                    <select id="mindmapDepthFilter" onchange="filterMindmapDepth()" class="px-4 py-2.5 rounded-lg bg-slate-700 border border-slate-600 text-slate-200 text-sm focus:outline-none focus:border-blue-500">
+                        <option value="all">All Depths</option>
+                        <option value="1">Depth 0-1</option>
+                        <option value="2">Depth 0-2</option>
+                        <option value="3">Depth 0-3</option>
+                        <option value="4">Depth 0-4</option>
+                    </select>
+                    <button onclick="resetMindmapView()" class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm transition-colors">
+                        <i class="fas fa-sync-alt mr-2"></i>Reset
+                    </button>
+                    <button onclick="exportMindmapPNG()" class="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm transition-colors">
+                        <i class="fas fa-download mr-2"></i>Export PNG
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Mind Map Visualization -->
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                <!-- Main Mind Map -->
+                <div class="lg:col-span-3">
+                    <div class="rounded-xl border border-slate-700 bg-slate-800 p-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-lg font-semibold text-slate-50 flex items-center gap-2">
+                                <i class="fas fa-sitemap text-purple-400"></i>
+                                Information Architecture Mind Map
+                            </h3>
+                            <div class="text-sm text-slate-400">
+                                <span id="mindmapNodeCount">{{ stats.total_pages }}</span> pages visualized
+                            </div>
+                        </div>
+                        <div class="rounded-lg bg-slate-900 overflow-hidden" style="height: 600px;">
+                            <div id="mindmapGraph" style="width: 100%; height: 100%;"></div>
+                        </div>
+                        
+                        <!-- Legend -->
+                        <div class="flex flex-wrap gap-4 mt-4 p-4 rounded-lg bg-slate-700/30">
+                            <div class="flex items-center gap-2">
+                                <span class="w-4 h-4 rounded-full bg-blue-500"></span>
+                                <span class="text-sm text-slate-300">🏠 Homepage</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="w-4 h-4 rounded-full bg-green-500"></span>
+                                <span class="text-sm text-slate-300">📁 Main Sections</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="w-4 h-4 rounded-full bg-amber-500"></span>
+                                <span class="text-sm text-slate-300">📄 Subsections</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="w-4 h-4 rounded-full bg-orange-500"></span>
+                                <span class="text-sm text-slate-300">📝 Detail Pages</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="w-4 h-4 rounded-full bg-red-500"></span>
+                                <span class="text-sm text-slate-300">📎 Deep Pages</span>
+                            </div>
+                            <div class="flex items-center gap-2 ml-auto text-slate-400 text-sm">
+                                <i class="fas fa-info-circle"></i>
+                                Node size = number of child links
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Side Panel -->
+                <div class="lg:col-span-1 space-y-4">
+                    <!-- Structure Summary -->
+                    <div class="rounded-xl border border-slate-700 bg-slate-800 p-5">
+                        <h3 class="text-base font-semibold text-slate-50 mb-4 flex items-center gap-2">
+                            <i class="fas fa-layer-group text-blue-400"></i>
+                            Structure Summary
+                        </h3>
+                        <div class="space-y-3">
+                            {% for depth, count in stats.pages_by_depth.items() %}
+                            <div class="flex justify-between items-center py-2 border-b border-slate-700/50">
+                                <span class="text-sm text-slate-400 flex items-center gap-2">
+                                    <span class="w-3 h-3 rounded-full" style="background-color: {{ ['#3B82F6', '#10B981', '#F59E0B', '#FB923C', '#EF4444'][depth|int if depth|int < 5 else 4] }}"></span>
+                                    Depth {{ depth }}
+                                </span>
+                                <span class="text-sm font-semibold text-slate-200">{{ count }} pages</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    
+                    <!-- Treemap -->
+                    <div class="rounded-xl border border-slate-700 bg-slate-800 p-5">
+                        <h3 class="text-base font-semibold text-slate-50 mb-4 flex items-center gap-2">
+                            <i class="fas fa-th-large text-amber-400"></i>
+                            Content Treemap
+                        </h3>
+                        <div id="treemapChart" style="height: 250px;"></div>
+                    </div>
+                    
+                    <!-- Quick Stats -->
+                    <div class="rounded-xl border border-slate-700 bg-slate-800 p-5">
+                        <h3 class="text-base font-semibold text-slate-50 mb-4 flex items-center gap-2">
+                            <i class="fas fa-chart-pie text-green-400"></i>
+                            Quick Stats
+                        </h3>
+                        <div class="space-y-3">
+                            <div class="flex justify-between items-center">
+                                <span class="text-sm text-slate-400">Total Pages</span>
+                                <span class="text-lg font-bold text-blue-400">{{ stats.total_pages }}</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-sm text-slate-400">Max Depth</span>
+                                <span class="text-lg font-bold text-amber-400">{{ stats.max_depth }}</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-sm text-slate-400">Avg Links/Page</span>
+                                <span class="text-lg font-bold text-green-400">{{ stats.avg_links }}</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-sm text-slate-400">IA Score</span>
+                                <span class="text-lg font-bold {{ 'text-green-400' if ia_score.final_score >= 75 else 'text-amber-400' if ia_score.final_score >= 50 else 'text-red-400' }}">{{ ia_score.final_score }}/100</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- External Links -->
+                    <div class="rounded-xl border border-slate-700 bg-slate-800 p-5">
+                        <h3 class="text-base font-semibold text-slate-50 mb-4 flex items-center gap-2">
+                            <i class="fas fa-external-link-alt text-purple-400"></i>
+                            View Full Visualizations
+                        </h3>
+                        <div class="space-y-2">
+                            <a href="/visualizations/mindmap" target="_blank" class="flex items-center gap-2 p-3 rounded-lg bg-slate-700/50 hover:bg-slate-700 text-slate-300 text-sm transition-colors">
+                                <i class="fas fa-project-diagram text-blue-400"></i>
+                                <span>Full Mind Map</span>
+                                <i class="fas fa-arrow-right ml-auto text-slate-500"></i>
+                            </a>
+                            <a href="/visualizations/radial" target="_blank" class="flex items-center gap-2 p-3 rounded-lg bg-slate-700/50 hover:bg-slate-700 text-slate-300 text-sm transition-colors">
+                                <i class="fas fa-circle-notch text-purple-400"></i>
+                                <span>Radial View</span>
+                                <i class="fas fa-arrow-right ml-auto text-slate-500"></i>
+                            </a>
+                            <a href="/visualizations/tree" target="_blank" class="flex items-center gap-2 p-3 rounded-lg bg-slate-700/50 hover:bg-slate-700 text-slate-300 text-sm transition-colors">
+                                <i class="fas fa-sitemap text-green-400"></i>
+                                <span>Tree Hierarchy</span>
+                                <i class="fas fa-arrow-right ml-auto text-slate-500"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </main>
     
     <!-- Footer -->
@@ -1353,6 +1781,8 @@ SHADCN_DASHBOARD_HTML = '''
         const networkData = {{ network_graph_json | safe }};
         const depthChartData = {{ depth_chart_json | safe }};
         const sectionChartData = {{ section_chart_json | safe }};
+        const mindmapData = {{ mindmap_json | safe }};
+        const treemapData = {{ treemap_json | safe }};
         
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
@@ -1412,7 +1842,77 @@ SHADCN_DASHBOARD_HTML = '''
                             }, {responsive: true});
                         }, 100);
                     }
+                    
+                    // Initialize mindmap when mindmap tab is selected
+                    if (this.dataset.tab === 'mindmap') {
+                        setTimeout(() => {
+                            initMindmapCharts();
+                        }, 100);
+                    }
                 });
+            });
+        }
+        
+        // Mind Map Functions
+        let mindmapInitialized = false;
+        
+        function initMindmapCharts() {
+            if (mindmapInitialized) return;
+            
+            // Mind map graph
+            if (mindmapData && Object.keys(mindmapData).length > 0) {
+                Plotly.newPlot('mindmapGraph', mindmapData.data, {
+                    ...mindmapData.layout,
+                    height: 580
+                }, {responsive: true});
+            }
+            
+            // Treemap chart
+            if (treemapData && Object.keys(treemapData).length > 0) {
+                Plotly.newPlot('treemapChart', treemapData.data, {
+                    ...treemapData.layout,
+                    height: 230
+                }, {responsive: true});
+            }
+            
+            mindmapInitialized = true;
+        }
+        
+        function setMindmapView(view) {
+            // Update button styles
+            document.getElementById('viewRadial').className = view === 'radial' 
+                ? 'px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium transition-colors'
+                : 'px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium transition-colors';
+            document.getElementById('viewTree').className = view === 'tree'
+                ? 'px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium transition-colors'
+                : 'px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium transition-colors';
+            
+            // For now, both views use the same Plotly visualization
+            // In a full implementation, this would switch between different visualization types
+            console.log('Switched to ' + view + ' view');
+        }
+        
+        function filterMindmapDepth() {
+            const depthValue = document.getElementById('mindmapDepthFilter').value;
+            console.log('Filtering to depth: ' + depthValue);
+            // In a full implementation, this would filter the visualization by depth
+        }
+        
+        function resetMindmapView() {
+            if (document.getElementById('mindmapGraph')) {
+                Plotly.relayout('mindmapGraph', {
+                    'xaxis.autorange': true,
+                    'yaxis.autorange': true
+                });
+            }
+        }
+        
+        function exportMindmapPNG() {
+            Plotly.downloadImage('mindmapGraph', {
+                format: 'png',
+                width: 1400,
+                height: 800,
+                filename: 'tsm_mindmap'
             });
         }
         
@@ -1544,6 +2044,8 @@ def dashboard_home():
     network_graph_json = create_network_graph_plotly(df, max_nodes=80)
     depth_chart_json = create_depth_bar_chart(stats)
     section_chart_json = create_section_pie_chart(audit_data)
+    mindmap_json = create_mindmap_plotly(df, max_nodes=100)
+    treemap_json = create_treemap_chart(df)
 
     table_data = df.to_dict("records") if not df.empty else []
 
@@ -1560,6 +2062,8 @@ def dashboard_home():
         network_graph_json=network_graph_json,
         depth_chart_json=depth_chart_json,
         section_chart_json=section_chart_json,
+        mindmap_json=mindmap_json,
+        treemap_json=treemap_json,
         table_data=table_data[:100],
     )
 
@@ -1611,6 +2115,60 @@ def download_data():
         as_attachment=True,
         download_name="tsm_crawl_data.csv",
     )
+
+
+@app.route("/visualizations/mindmap")
+def visualizations_mindmap():
+    """Serve the full mindmap visualization."""
+    from src.mindmap import create_plotly_mindmap
+    
+    output_file = Path(__file__).parent.parent / "visualizations" / "mindmap.html"
+    
+    # Generate if not exists
+    if not output_file.exists():
+        try:
+            create_plotly_mindmap(str(CSV_FILE_PATH), str(output_file))
+        except Exception as e:
+            logger.error(f"Error generating mindmap: {e}")
+            return jsonify({"error": "Failed to generate mindmap"}), 500
+    
+    return send_file(output_file, mimetype="text/html")
+
+
+@app.route("/visualizations/radial")
+def visualizations_radial():
+    """Serve the radial mindmap visualization."""
+    from src.mindmap import create_radial_mindmap
+    
+    output_file = Path(__file__).parent.parent / "visualizations" / "radial_mindmap.html"
+    
+    # Generate if not exists
+    if not output_file.exists():
+        try:
+            create_radial_mindmap(str(CSV_FILE_PATH), str(output_file))
+        except Exception as e:
+            logger.error(f"Error generating radial mindmap: {e}")
+            return jsonify({"error": "Failed to generate radial mindmap"}), 500
+    
+    return send_file(output_file, mimetype="text/html")
+
+
+@app.route("/visualizations/tree")
+def visualizations_tree():
+    """Serve the tree hierarchy visualization."""
+    from src.mindmap import create_tree_hierarchy_view
+    
+    output_file = Path(__file__).parent.parent / "visualizations" / "tree_hierarchy.html"
+    
+    # Generate if not exists
+    if not output_file.exists():
+        try:
+            create_tree_hierarchy_view(str(CSV_FILE_PATH), str(output_file))
+        except Exception as e:
+            logger.error(f"Error generating tree hierarchy: {e}")
+            return jsonify({"error": "Failed to generate tree hierarchy"}), 500
+    
+    return send_file(output_file, mimetype="text/html")
 
 
 # ---------------------------------------------------------------------------
