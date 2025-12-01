@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TSM Website Crawler - Interactive Dashboard</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f8f9fa;
+            --text-primary: #212529;
+            --text-secondary: #6c757d;
+            --accent: #3498db;
+            --accent-hover: #2980b9;
+            --border: #dee2e6;
+            --card-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            --card-shadow-hover: 0 4px 8px rgba(0,0,0,0.15);
+        }
+
+        [data-theme="dark"] {
+            --bg-primary: #1a1a1a;
+            --bg-secondary: #2d2d2d;
+            --text-primary: #ffffff;
+            --text-secondary: #b0b0b0;
+            --accent: #5dade2;
+            --accent-hover: #3498db;
+            --border: #404040;
+            --card-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            --card-shadow-hover: 0 4px 8px rgba(0,0,0,0.4);
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+            color: white;
+            padding: 1.5rem 2rem;
+            box-shadow: var(--card-shadow);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .header h1 {
+            font-size: 1.8rem;
+            font-weight: 600;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn-primary {
+            background: white;
+            color: var(--accent);
+        }
+
+        .btn-primary:hover {
+            background: #f0f0f0;
+            transform: translateY(-2px);
+        }
+
+        .btn-secondary {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .summary-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            background: var(--bg-primary);
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: var(--card-shadow);
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--card-shadow-hover);
+        }
+
+        .card-title {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.5rem;
+        }
+
+        .card-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--accent);
+            margin-bottom: 0.25rem;
+        }
+
+        .card-subtitle {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .section {
+            background: var(--bg-primary);
+            border-radius: 12px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: var(--card-shadow);
+        }
+
+        .section-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            color: var(--text-primary);
+            border-bottom: 2px solid var(--accent);
+            padding-bottom: 0.5rem;
+        }
+
+        .chart-container {
+            margin: 1rem 0;
+            background: var(--bg-primary);
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .data-table-container {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        th {
+            background: var(--bg-secondary);
+            font-weight: 600;
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+        }
+
+        th:hover {
+            background: var(--accent);
+            color: white;
+        }
+
+        th::after {
+            content: ' ↕';
+            opacity: 0.5;
+            font-size: 0.8rem;
+        }
+
+        tr:hover {
+            background: var(--bg-secondary);
+        }
+
+        .search-filter {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .search-filter input,
+        .search-filter select {
+            padding: 0.5rem;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 0.9rem;
+        }
+
+        .search-filter input {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .stats-panel {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .stat-item {
+            padding: 1rem;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            border-left: 4px solid var(--accent);
+        }
+
+        .stat-label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--accent);
+        }
+
+        .top-pages-list {
+            list-style: none;
+        }
+
+        .top-pages-list li {
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            background: var(--bg-secondary);
+            border-radius: 6px;
+            border-left: 3px solid var(--accent);
+        }
+
+        .top-pages-list li strong {
+            color: var(--accent);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-secondary);
+        }
+
+        .theme-toggle {
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .theme-toggle:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        @media (max-width: 768px) {
+            .header-content {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .summary-cards {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-content">
+            <h1>🕷️ TSM Website Crawler Dashboard</h1>
+            <div class="header-actions">
+                <button class="btn btn-secondary theme-toggle" onclick="toggleTheme()">🌓 Toggle Theme</button>
+                <button class="btn btn-secondary" onclick="refreshData()">🔄 Refresh</button>
+                <a href="/about" class="btn btn-primary">ℹ️ About</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Summary Cards -->
+        <div class="summary-cards">
+            <div class="card">
+                <div class="card-title">Total Pages</div>
+                <div class="card-value">{{ metrics.total_pages }}</div>
+                <div class="card-subtitle">Crawled successfully</div>
+            </div>
+            <div class="card">
+                <div class="card-title">Max Depth</div>
+                <div class="card-value">{{ metrics.max_depth }}</div>
+                <div class="card-subtitle">Navigation levels</div>
+            </div>
+            <div class="card">
+                <div class="card-title">Avg Links/Page</div>
+                <div class="card-value">{{ metrics.average_links }}</div>
+                <div class="card-subtitle">Internal connections</div>
+            </div>
+            <div class="card">
+                <div class="card-title">Success Rate</div>
+                <div class="card-value">{{ metrics.success_rate }}%</div>
+                <div class="card-subtitle">Pages fetched</div>
+            </div>
+            <div class="card">
+                <div class="card-title">Crawl Date</div>
+                <div class="card-value" style="font-size: 1.2rem;">{{ metrics.crawl_date }}</div>
+                <div class="card-subtitle">Last updated</div>
+            </div>
+        </div>
+
+        <!-- Network Graph -->
+        <div class="section">
+            <div class="section-title">Interactive Network Graph</div>
+            <div id="network-graph" class="chart-container"></div>
+        </div>
+
+        <!-- Charts Grid -->
+        <div class="charts-grid">
+            <div class="section">
+                <div class="section-title">Pages by Depth</div>
+                <div id="depth-chart" class="chart-container"></div>
+            </div>
+            <div class="section">
+                <div class="section-title">Section Distribution</div>
+                <div id="section-chart" class="chart-container"></div>
+            </div>
+        </div>
+
+        <!-- Treemap -->
+        <div class="section">
+            <div class="section-title">Content Hierarchy</div>
+            <div id="treemap" class="chart-container"></div>
+        </div>
+
+        <!-- Statistics Panel -->
+        <div class="section">
+            <div class="section-title">Statistics & Analysis</div>
+            <div class="stats-panel">
+                <div class="stat-item">
+                    <div class="stat-label">Unique Domains</div>
+                    <div class="stat-value">{{ metrics.unique_domains }}</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Orphan Pages</div>
+                    <div class="stat-value">{{ metrics.orphan_pages }}</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Navigation Efficiency</div>
+                    <div class="stat-value">75.86/100</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Table -->
+        <div class="section">
+            <div class="section-title">Crawl Data Table</div>
+            <div class="search-filter">
+                <input type="text" id="search-input" placeholder="🔍 Search by title or URL..." onkeyup="filterTable()">
+                <select id="depth-filter" onchange="filterTable()">
+                    <option value="">All Depths</option>
+                    <option value="0">Depth 0</option>
+                    <option value="1">Depth 1</option>
+                    <option value="2">Depth 2</option>
+                </select>
+            </div>
+            <div class="data-table-container">
+                <table id="data-table">
+                    <thead>
+                        <tr>
+                            <th onclick="sortTable(0)">URL</th>
+                            <th onclick="sortTable(1)">Title</th>
+                            <th onclick="sortTable(2)">Depth</th>
+                            <th onclick="sortTable(3)">Links</th>
+                            <th onclick="sortTable(4)">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="table-body">
+                        {% for row in table_data %}
+                        <tr>
+                            <td><a href="{{ row.url }}" target="_blank" style="color: var(--accent);">{{ row.url[:50] }}...</a></td>
+                            <td>{{ row.title }}</td>
+                            <td>{{ row.depth }}</td>
+                            <td>{{ row.child_count }}</td>
+                            <td>{{ row.status_code }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Theme toggle
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+        }
+
+        // Load saved theme
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+
+        // Load charts
+        function loadCharts() {
+            // Network Graph
+            fetch('/api/network-graph')
+                .then(response => response.json())
+                .then(data => {
+                    const graphDiv = document.getElementById('network-graph');
+                    Plotly.newPlot('network-graph', data.data, data.layout, {responsive: true});
+                })
+                .catch(error => {
+                    document.getElementById('network-graph').innerHTML = '<div class="loading">Error loading network graph</div>';
+                });
+
+            // Depth Chart
+            fetch('/api/depth-chart')
+                .then(response => response.json())
+                .then(data => {
+                    Plotly.newPlot('depth-chart', data.data, data.layout, {responsive: true});
+                })
+                .catch(error => {
+                    document.getElementById('depth-chart').innerHTML = '<div class="loading">Error loading chart</div>';
+                });
+
+            // Section Chart
+            fetch('/api/section-chart')
+                .then(response => response.json())
+                .then(data => {
+                    Plotly.newPlot('section-chart', data.data, data.layout, {responsive: true});
+                })
+                .catch(error => {
+                    document.getElementById('section-chart').innerHTML = '<div class="loading">Error loading chart</div>';
+                });
+
+            // Treemap
+            fetch('/api/treemap')
+                .then(response => response.json())
+                .then(data => {
+                    Plotly.newPlot('treemap', data.data, data.layout, {responsive: true});
+                })
+                .catch(error => {
+                    document.getElementById('treemap').innerHTML = '<div class="loading">Error loading treemap</div>';
+                });
+        }
+
+        // Table sorting
+        let sortDirection = {};
+        function sortTable(columnIndex) {
+            const table = document.getElementById('data-table');
+            const tbody = table.querySelector('tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            
+            const isAscending = !sortDirection[columnIndex];
+            sortDirection[columnIndex] = isAscending;
+
+            rows.sort((a, b) => {
+                const aText = a.cells[columnIndex].textContent.trim();
+                const bText = b.cells[columnIndex].textContent.trim();
+                
+                // Try to parse as number
+                const aNum = parseFloat(aText);
+                const bNum = parseFloat(bText);
+                
+                if (!isNaN(aNum) && !isNaN(bNum)) {
+                    return isAscending ? aNum - bNum : bNum - aNum;
+                }
+                
+                return isAscending ? aText.localeCompare(bText) : bText.localeCompare(aText);
+            });
+
+            rows.forEach(row => tbody.appendChild(row));
+        }
+
+        // Table filtering
+        function filterTable() {
+            const searchInput = document.getElementById('search-input').value.toLowerCase();
+            const depthFilter = document.getElementById('depth-filter').value;
+            const table = document.getElementById('data-table');
+            const rows = table.querySelectorAll('tbody tr');
+
+            rows.forEach(row => {
+                const title = row.cells[1].textContent.toLowerCase();
+                const url = row.cells[0].textContent.toLowerCase();
+                const depth = row.cells[2].textContent.trim();
+                
+                const matchesSearch = title.includes(searchInput) || url.includes(searchInput);
+                const matchesDepth = !depthFilter || depth === depthFilter;
+                
+                row.style.display = (matchesSearch && matchesDepth) ? '' : 'none';
+            });
+        }
+
+        // Refresh data
+        function refreshData() {
+            fetch('/api/refresh')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('Data refreshed successfully!');
+                        location.reload();
+                    } else {
+                        alert('Error refreshing data');
+                    }
+                })
+                .catch(error => {
+                    alert('Error refreshing data');
+                });
+        }
+
+        // Initialize on load
+        window.addEventListener('load', () => {
+            loadCharts();
+        });
+    </script>
+</body>
+</html>
+

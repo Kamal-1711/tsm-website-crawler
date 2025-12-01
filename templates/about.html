@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About - TSM Website Crawler</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f8f9fa;
+            --text-primary: #212529;
+            --text-secondary: #6c757d;
+            --accent: #3498db;
+            --accent-hover: #2980b9;
+        }
+
+        [data-theme="dark"] {
+            --bg-primary: #1a1a1a;
+            --bg-secondary: #2d2d2d;
+            --text-primary: #ffffff;
+            --text-secondary: #b0b0b0;
+            --accent: #5dade2;
+            --accent-hover: #3498db;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+            color: white;
+            padding: 1.5rem 2rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .header-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .btn {
+            padding: 0.5rem 1rem;
+            background: white;
+            color: var(--accent);
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .content {
+            background: var(--bg-primary);
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: var(--accent);
+            margin-bottom: 1rem;
+        }
+
+        h2 {
+            color: var(--accent);
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        p {
+            margin-bottom: 1rem;
+            color: var(--text-primary);
+        }
+
+        ul {
+            margin-left: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        li {
+            margin-bottom: 0.5rem;
+        }
+
+        .tech-stack {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+
+        .tech-item {
+            padding: 1rem;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            border-left: 4px solid var(--accent);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-content">
+            <h1>TSM Website Crawler</h1>
+            <a href="/" class="btn">← Back to Dashboard</a>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="content">
+            <h1>About This Project</h1>
+            
+            <p>
+                The TSM Website Crawler is a production-ready web scraping and analytics tool designed 
+                to systematically analyze website structure, navigation patterns, and information architecture. 
+                This project demonstrates advanced Python programming, web scraping best practices, and 
+                data visualization techniques.
+            </p>
+
+            <h2>Project Objectives</h2>
+            <ul>
+                <li>Systematically crawl and map website structure</li>
+                <li>Analyze navigation efficiency and information architecture</li>
+                <li>Generate actionable insights for website optimization</li>
+                <li>Provide interactive visualizations for data exploration</li>
+            </ul>
+
+            <h2>Technology Stack</h2>
+            <div class="tech-stack">
+                <div class="tech-item">
+                    <strong>Python 3.8+</strong><br>
+                    Core programming language
+                </div>
+                <div class="tech-item">
+                    <strong>Flask</strong><br>
+                    Web framework for dashboard
+                </div>
+                <div class="tech-item">
+                    <strong>Plotly</strong><br>
+                    Interactive visualizations
+                </div>
+                <div class="tech-item">
+                    <strong>BeautifulSoup</strong><br>
+                    HTML parsing
+                </div>
+                <div class="tech-item">
+                    <strong>NetworkX</strong><br>
+                    Graph analysis
+                </div>
+                <div class="tech-item">
+                    <strong>Pandas</strong><br>
+                    Data manipulation
+                </div>
+            </div>
+
+            <h2>Features</h2>
+            <ul>
+                <li>✅ Depth-limited recursive crawling</li>
+                <li>✅ URL normalization and duplicate prevention</li>
+                <li>✅ Domain filtering and extension exclusion</li>
+                <li>✅ Comprehensive error handling</li>
+                <li>✅ Interactive network graphs</li>
+                <li>✅ Statistical analysis and reporting</li>
+                <li>✅ Responsive web dashboard</li>
+                <li>✅ Dark mode support</li>
+            </ul>
+
+            <h2>Ethical Considerations</h2>
+            <p>
+                This crawler is designed with ethical web scraping practices:
+            </p>
+            <ul>
+                <li>Respects robots.txt guidelines</li>
+                <li>Implements request delays to avoid server overload</li>
+                <li>Clearly identifies itself with User-Agent header</li>
+                <li>Only collects publicly available structural data</li>
+                <li>Designed for educational and portfolio purposes</li>
+            </ul>
+
+            <h2>Project Status</h2>
+            <p>
+                ✅ Production Ready - All core features implemented and tested
+            </p>
+
+            <p style="margin-top: 2rem; color: var(--text-secondary);">
+                For more information, see the project README.md and CASE_STUDY.md files.
+            </p>
+        </div>
+    </div>
+</body>
+</html>
+

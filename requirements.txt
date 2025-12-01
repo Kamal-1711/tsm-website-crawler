@@ -1,0 +1,39 @@
+# Web Scraper Requirements for Educational Institution Website Crawling
+# This file contains all dependencies needed for crawling and visualizing site structures
+
+# ============================================================================
+# HTTP Request Libraries
+# ============================================================================
+# Core library for making HTTP requests to fetch web pages
+requests>=2.31.0
+# HTTP connection pooling and management for efficient request handling
+urllib3>=2.1.0
+
+# ============================================================================
+# HTML/XML Parsing Libraries
+# ============================================================================
+# BeautifulSoup for parsing and navigating HTML/XML documents
+beautifulsoup4>=4.12.0
+# Fast XML/HTML parser backend for BeautifulSoup (C-based, high performance)
+lxml>=5.0.0
+
+# ============================================================================
+# Data Processing and Analysis
+# ============================================================================
+# Data manipulation library for processing scraped data and CSV export
+pandas>=2.1.0
+
+# ============================================================================
+# Visualization Libraries
+# ============================================================================
+# Network/graph library for visualizing website structure and link relationships
+networkx>=3.2.0
+# Plotting library for creating charts, graphs, and visual representations
+matplotlib>=3.8.0
+# Interactive plotting library for web dashboards
+plotly>=5.18.0
+
+# Web Framework
+# ============================================================================
+# Lightweight web framework for building dashboards
+flask>=3.0.0

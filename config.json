@@ -1,0 +1,24 @@
+{
+  "crawl_settings": {
+    "base_url": "https://tsm.ac.in/",
+    "max_depth": 2,
+    "request_delay": 1.5,
+    "timeout": 10,
+    "user_agent": "TSM-Crawler/1.0 (Educational Project for Portfolio)"
+  },
+  "output_settings": {
+    "csv_output_path": "output/tsm_crawl_data.csv",
+    "json_output_path": "output/tsm_crawl_data.json"
+  },
+  "visualization_settings": {
+    "output_path": "visualizations/tsm_hierarchy.png",
+    "figure_size": [20, 12],
+    "dpi": 300,
+    "node_size": 500,
+    "colormap": "Blues"
+  },
+  "filtering": {
+    "allowed_domains": ["tsm.ac.in"],
+    "exclude_extensions": [".pdf", ".jpg", ".png", ".gif", ".zip"]
+  }
+}

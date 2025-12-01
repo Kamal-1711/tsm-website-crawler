@@ -1,0 +1,59 @@
+{
+  "_comment": "Web Crawler Configuration File - TSM Educational Institution Website Crawler",
+  "_note": "JSON doesn't support comments natively. See CONFIG_DOCUMENTATION.md for detailed explanations.",
+  
+  "crawl_settings": {
+    "_comment": "Core crawling behavior and request parameters",
+    "base_url": "https://tsm.ac.in/",
+    "_base_url_note": "Starting URL for the crawler. All crawling begins from this URL.",
+    
+    "max_depth": 2,
+    "_max_depth_note": "Maximum depth to crawl from base_url. Depth 0 = base_url only, Depth 1 = base_url + direct links, Depth 2 = base_url + direct links + links from those pages. Set to 2 for initial testing to avoid overwhelming the server.",
+    
+    "request_delay": 1.5,
+    "_request_delay_note": "Delay in seconds between HTTP requests. Prevents server overload and reduces risk of being blocked. 1.5 seconds is a reasonable balance between speed and politeness.",
+    
+    "timeout": 10,
+    "_timeout_note": "Timeout in seconds for each HTTP request. If a page takes longer than this, the request will be abandoned.",
+    
+    "user_agent": "TSM-Crawler/1.0 (Educational Project for Portfolio)",
+    "_user_agent_note": "User-Agent string sent with each HTTP request. Identifies the crawler to the web server. This identifies it as an educational project."
+  },
+  
+  "output_settings": {
+    "_comment": "File paths and formats for saving crawled data",
+    "csv_output_path": "output/tsm_crawl_data.csv",
+    "_csv_output_path_note": "Path where crawled data will be saved in CSV format. Useful for spreadsheet analysis and data manipulation.",
+    
+    "json_output_path": "output/tsm_crawl_data.json",
+    "_json_output_path_note": "Path where crawled data will be saved in JSON format. Preserves hierarchical structure and is easy to parse programmatically."
+  },
+  
+  "visualization_settings": {
+    "_comment": "Settings for generating site structure visualizations",
+    "output_path": "visualizations/tsm_hierarchy.png",
+    "_output_path_note": "File path where the site hierarchy visualization will be saved as a PNG image.",
+    
+    "figure_size": [20, 12],
+    "_figure_size_note": "Figure dimensions in inches [width, height]. Larger sizes provide more detail but take longer to render. [20, 12] is good for complex site structures.",
+    
+    "dpi": 300,
+    "_dpi_note": "Resolution in dots per inch. Higher DPI produces sharper images but larger file sizes. 300 DPI is print-quality resolution.",
+    
+    "node_size": 500,
+    "_node_size_note": "Size of nodes in the network graph visualization. Larger nodes are more visible but may cause overlap in dense graphs.",
+    
+    "colormap": "Blues",
+    "_colormap_note": "Color scheme for the visualization. 'Blues' provides a professional, clean appearance. Other options: 'Reds', 'Greens', 'viridis', 'plasma', etc."
+  },
+  
+  "filtering": {
+    "_comment": "Rules for filtering which URLs to crawl and which to exclude",
+    "allowed_domains": ["tsm.ac.in"],
+    "_allowed_domains_note": "List of domains the crawler is allowed to visit. Only URLs from these domains will be crawled. Prevents the crawler from following external links.",
+    
+    "exclude_extensions": [".pdf", ".jpg", ".png", ".gif", ".zip"],
+    "_exclude_extensions_note": "File extensions to skip during crawling. These file types are typically not HTML pages and don't contain crawlable links. Excluding them saves time and bandwidth."
+  }
+}
+
