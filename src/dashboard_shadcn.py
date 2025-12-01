@@ -626,6 +626,193 @@ def create_treemap_chart(df: pd.DataFrame) -> str:
     return fig.to_json()
 
 
+def create_tree_hierarchy_plotly(df: pd.DataFrame, max_nodes: int = 100) -> str:
+    """Create a tree hierarchy visualization using Plotly with top-down layout."""
+    if df.empty:
+        return "{}"
+
+    df_limited = df.head(max_nodes)
+
+    # Build graph
+    G = nx.DiGraph()
+    
+    for _, row in df_limited.iterrows():
+        url = row["url"]
+        parent = row.get("parent_url", "") or ""
+        
+        G.add_node(url, **{
+            "title": row.get("title", "") or extract_section_name(url),
+            "depth": int(row.get("depth", 0)),
+            "child_count": int(row.get("child_count", 0)),
+            "status_code": int(row.get("status_code", 200)),
+        })
+        
+        if parent and parent in [r["url"] for _, r in df_limited.iterrows()]:
+            G.add_edge(parent, url)
+
+    # Find root nodes
+    root_nodes = [n for n in G.nodes() if G.in_degree(n) == 0]
+    root = root_nodes[0] if root_nodes else (list(G.nodes())[0] if G.nodes() else None)
+
+    if not root:
+        return "{}"
+
+    # Calculate tree positions (top-down hierarchy)
+    def calculate_tree_positions(graph, root_node):
+        """Calculate positions in a top-down tree layout."""
+        pos = {}
+        visited = set()
+        
+        # BFS to assign levels
+        levels = {}
+        queue = [(root_node, 0)]
+        visited.add(root_node)
+        
+        while queue:
+            node, level = queue.pop(0)
+            if level not in levels:
+                levels[level] = []
+            levels[level].append(node)
+            
+            for neighbor in graph.successors(node):
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    queue.append((neighbor, level + 1))
+        
+        # Position nodes in tree layout (top to bottom, spread horizontally)
+        max_width = max(len(nodes) for nodes in levels.values()) if levels else 1
+        
+        for level, nodes in levels.items():
+            y = -level * 1.5  # Negative y so tree grows downward
+            width = len(nodes)
+            
+            for i, node in enumerate(nodes):
+                # Center nodes at each level
+                x = (i - (width - 1) / 2) * (max_width / max(width, 1)) * 1.2
+                pos[node] = (x, y)
+        
+        return pos
+
+    try:
+        pos = calculate_tree_positions(G, root)
+    except Exception:
+        pos = nx.spring_layout(G, k=2, iterations=50, seed=42)
+
+    # Create edge traces
+    edge_x, edge_y = [], []
+    
+    for edge in G.edges():
+        if edge[0] in pos and edge[1] in pos:
+            x0, y0 = pos[edge[0]]
+            x1, y1 = pos[edge[1]]
+            edge_x.extend([x0, x1, None])
+            edge_y.extend([y0, y1, None])
+
+    edge_trace = go.Scatter(
+        x=edge_x,
+        y=edge_y,
+        line=dict(width=1.5, color="#475569"),
+        hoverinfo="none",
+        mode="lines",
+        name="Connections",
+    )
+
+    # Create node traces by depth
+    node_traces = []
+    depth_names = {
+        0: "🏠 Homepage",
+        1: "📁 Main Sections",
+        2: "📄 Subsections",
+        3: "📝 Detail Pages",
+        4: "📎 Deep Pages",
+    }
+    
+    for depth in range(6):
+        nodes_at_depth = [n for n in G.nodes() if G.nodes[n].get("depth", 0) == depth and n in pos]
+        
+        if not nodes_at_depth:
+            continue
+        
+        node_x, node_y, node_text, node_size = [], [], [], []
+        
+        for node in nodes_at_depth:
+            x, y = pos[node]
+            node_x.append(x)
+            node_y.append(y)
+            
+            data = G.nodes[node]
+            title = data.get("title", "")[:40]
+            child_count = data.get("child_count", 0)
+            status = data.get("status_code", 200)
+            icon = get_section_icon(title)
+            
+            hover_text = (
+                f"<b>{icon} {title}</b><br>"
+                f"<span style='color:#94A3B8'>URL:</span> {node[:60]}{'...' if len(node) > 60 else ''}<br>"
+                f"<span style='color:#94A3B8'>Depth:</span> {depth}<br>"
+                f"<span style='color:#94A3B8'>Children:</span> {child_count}<br>"
+                f"<span style='color:#94A3B8'>Status:</span> {status}"
+            )
+            node_text.append(hover_text)
+            
+            # Size based on child count
+            size = 20 + min(child_count * 2, 35)
+            node_size.append(size)
+        
+        depth_name = depth_names.get(depth, f"Level {depth}")
+        
+        node_trace = go.Scatter(
+            x=node_x,
+            y=node_y,
+            mode="markers",
+            hoverinfo="text",
+            text=node_text,
+            name=depth_name,
+            marker=dict(
+                color=get_depth_color(depth),
+                size=node_size,
+                line=dict(width=2, color="#0F172A"),
+                opacity=0.9,
+                symbol="square" if depth == 0 else "circle",
+            ),
+        )
+        node_traces.append(node_trace)
+
+    # Create figure
+    fig = go.Figure(
+        data=[edge_trace] + node_traces,
+        layout=go.Layout(
+            showlegend=True,
+            legend=dict(
+                font=dict(color="#E2E8F0", size=12),
+                bgcolor="rgba(30, 41, 59, 0.9)",
+                bordercolor="#475569",
+                borderwidth=1,
+                x=0.02,
+                y=0.98,
+                xanchor="left",
+                yanchor="top",
+            ),
+            hovermode="closest",
+            paper_bgcolor="#0F172A",
+            plot_bgcolor="#0F172A",
+            xaxis=dict(
+                showgrid=False,
+                zeroline=False,
+                showticklabels=False,
+            ),
+            yaxis=dict(
+                showgrid=False,
+                zeroline=False,
+                showticklabels=False,
+            ),
+            margin=dict(l=20, r=20, t=20, b=20),
+        ),
+    )
+
+    return fig.to_json()
+
+
 # ---------------------------------------------------------------------------
 # HTML Template with shadcn/ui Components
 # ---------------------------------------------------------------------------
@@ -1736,28 +1923,54 @@ SHADCN_DASHBOARD_HTML = '''
                         </div>
                     </div>
                     
-                    <!-- External Links -->
+                    <!-- View Controls Info -->
                     <div class="rounded-xl border border-slate-700 bg-slate-800 p-5">
                         <h3 class="text-base font-semibold text-slate-50 mb-4 flex items-center gap-2">
-                            <i class="fas fa-external-link-alt text-purple-400"></i>
-                            View Full Visualizations
+                            <i class="fas fa-info-circle text-purple-400"></i>
+                            View Controls
                         </h3>
-                        <div class="space-y-2">
-                            <a href="/visualizations/mindmap" target="_blank" class="flex items-center gap-2 p-3 rounded-lg bg-slate-700/50 hover:bg-slate-700 text-slate-300 text-sm transition-colors">
-                                <i class="fas fa-project-diagram text-blue-400"></i>
-                                <span>Full Mind Map</span>
-                                <i class="fas fa-arrow-right ml-auto text-slate-500"></i>
-                            </a>
-                            <a href="/visualizations/radial" target="_blank" class="flex items-center gap-2 p-3 rounded-lg bg-slate-700/50 hover:bg-slate-700 text-slate-300 text-sm transition-colors">
-                                <i class="fas fa-circle-notch text-purple-400"></i>
-                                <span>Radial View</span>
-                                <i class="fas fa-arrow-right ml-auto text-slate-500"></i>
-                            </a>
-                            <a href="/visualizations/tree" target="_blank" class="flex items-center gap-2 p-3 rounded-lg bg-slate-700/50 hover:bg-slate-700 text-slate-300 text-sm transition-colors">
-                                <i class="fas fa-sitemap text-green-400"></i>
-                                <span>Tree Hierarchy</span>
-                                <i class="fas fa-arrow-right ml-auto text-slate-500"></i>
-                            </a>
+                        <div class="space-y-3 text-sm text-slate-400">
+                            <div class="flex items-start gap-2">
+                                <i class="fas fa-circle-notch text-blue-400 mt-0.5"></i>
+                                <div>
+                                    <span class="text-slate-300 font-medium">Radial View</span>
+                                    <p class="text-xs mt-0.5">Circular layout with homepage at center</p>
+                                </div>
+                            </div>
+                            <div class="flex items-start gap-2">
+                                <i class="fas fa-sitemap text-green-400 mt-0.5"></i>
+                                <div>
+                                    <span class="text-slate-300 font-medium">Tree View</span>
+                                    <p class="text-xs mt-0.5">Hierarchical top-down layout</p>
+                                </div>
+                            </div>
+                            <div class="flex items-start gap-2">
+                                <i class="fas fa-filter text-amber-400 mt-0.5"></i>
+                                <div>
+                                    <span class="text-slate-300 font-medium">Depth Filter</span>
+                                    <p class="text-xs mt-0.5">Filter nodes by depth level</p>
+                                </div>
+                            </div>
+                            <div class="flex items-start gap-2">
+                                <i class="fas fa-mouse-pointer text-purple-400 mt-0.5"></i>
+                                <div>
+                                    <span class="text-slate-300 font-medium">Interactions</span>
+                                    <p class="text-xs mt-0.5">Hover for details, scroll to zoom, drag to pan</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Open in New Tab Links -->
+                        <div class="mt-4 pt-4 border-t border-slate-700">
+                            <p class="text-xs text-slate-500 mb-2">Open full-page view:</p>
+                            <div class="flex gap-2">
+                                <a href="/visualizations/radial" target="_blank" class="flex-1 text-center px-3 py-2 rounded-lg bg-slate-700/50 hover:bg-slate-700 text-slate-300 text-xs transition-colors">
+                                    <i class="fas fa-external-link-alt mr-1"></i>Radial
+                                </a>
+                                <a href="/visualizations/tree" target="_blank" class="flex-1 text-center px-3 py-2 rounded-lg bg-slate-700/50 hover:bg-slate-700 text-slate-300 text-xs transition-colors">
+                                    <i class="fas fa-external-link-alt mr-1"></i>Tree
+                                </a>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1782,7 +1995,11 @@ SHADCN_DASHBOARD_HTML = '''
         const depthChartData = {{ depth_chart_json | safe }};
         const sectionChartData = {{ section_chart_json | safe }};
         const mindmapData = {{ mindmap_json | safe }};
+        const treeHierarchyData = {{ tree_hierarchy_json | safe }};
         const treemapData = {{ treemap_json | safe }};
+        
+        // Current mindmap view state
+        let currentMindmapView = 'radial';
         
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
@@ -1857,15 +2074,8 @@ SHADCN_DASHBOARD_HTML = '''
         let mindmapInitialized = false;
         
         function initMindmapCharts() {
-            if (mindmapInitialized) return;
-            
-            // Mind map graph
-            if (mindmapData && Object.keys(mindmapData).length > 0) {
-                Plotly.newPlot('mindmapGraph', mindmapData.data, {
-                    ...mindmapData.layout,
-                    height: 580
-                }, {responsive: true});
-            }
+            // Initialize with radial view by default
+            renderMindmapView('radial');
             
             // Treemap chart
             if (treemapData && Object.keys(treemapData).length > 0) {
@@ -1878,27 +2088,123 @@ SHADCN_DASHBOARD_HTML = '''
             mindmapInitialized = true;
         }
         
+        function renderMindmapView(view) {
+            const container = document.getElementById('mindmapGraph');
+            if (!container) return;
+            
+            // Clear existing plot
+            Plotly.purge('mindmapGraph');
+            
+            // Select data based on view
+            let data, layout;
+            
+            if (view === 'tree' && treeHierarchyData && Object.keys(treeHierarchyData).length > 0) {
+                data = treeHierarchyData.data;
+                layout = {
+                    ...treeHierarchyData.layout,
+                    height: 580,
+                    title: {
+                        text: '🌳 Tree Hierarchy View',
+                        font: { color: '#E2E8F0', size: 16 },
+                        x: 0.5
+                    }
+                };
+            } else if (mindmapData && Object.keys(mindmapData).length > 0) {
+                data = mindmapData.data;
+                layout = {
+                    ...mindmapData.layout,
+                    height: 580,
+                    title: {
+                        text: '🔄 Radial Mind Map View',
+                        font: { color: '#E2E8F0', size: 16 },
+                        x: 0.5
+                    }
+                };
+            } else {
+                return;
+            }
+            
+            // Render the selected view
+            Plotly.newPlot('mindmapGraph', data, layout, {
+                responsive: true,
+                displayModeBar: true,
+                modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+                displaylogo: false
+            });
+            
+            currentMindmapView = view;
+        }
+        
         function setMindmapView(view) {
             // Update button styles
-            document.getElementById('viewRadial').className = view === 'radial' 
-                ? 'px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium transition-colors'
-                : 'px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium transition-colors';
-            document.getElementById('viewTree').className = view === 'tree'
-                ? 'px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium transition-colors'
-                : 'px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium transition-colors';
+            const radialBtn = document.getElementById('viewRadial');
+            const treeBtn = document.getElementById('viewTree');
             
-            // For now, both views use the same Plotly visualization
-            // In a full implementation, this would switch between different visualization types
-            console.log('Switched to ' + view + ' view');
+            if (view === 'radial') {
+                radialBtn.className = 'px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium transition-colors';
+                treeBtn.className = 'px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium transition-colors';
+            } else {
+                radialBtn.className = 'px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium transition-colors';
+                treeBtn.className = 'px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium transition-colors';
+            }
+            
+            // Render the selected view
+            renderMindmapView(view);
+            
+            // Update title in the card
+            const titleEl = document.querySelector('#tab-mindmap h3.text-lg');
+            if (titleEl) {
+                titleEl.innerHTML = view === 'tree' 
+                    ? '<i class="fas fa-sitemap text-purple-400"></i> Tree Hierarchy View'
+                    : '<i class="fas fa-circle-notch text-purple-400"></i> Radial Mind Map View';
+            }
         }
         
         function filterMindmapDepth() {
             const depthValue = document.getElementById('mindmapDepthFilter').value;
-            console.log('Filtering to depth: ' + depthValue);
-            // In a full implementation, this would filter the visualization by depth
+            
+            if (depthValue === 'all') {
+                // Reset to full view
+                renderMindmapView(currentMindmapView);
+                return;
+            }
+            
+            const maxDepth = parseInt(depthValue);
+            
+            // Get current data
+            const currentData = currentMindmapView === 'tree' ? treeHierarchyData : mindmapData;
+            if (!currentData || !currentData.data) return;
+            
+            // Filter traces to only show nodes up to maxDepth
+            const filteredData = currentData.data.map(trace => {
+                if (trace.name && trace.name.includes('Depth') || trace.name && trace.name.includes('Level')) {
+                    // Check if this trace should be visible based on depth
+                    const depthMatch = trace.name.match(/(\d+)/);
+                    if (depthMatch) {
+                        const traceDepth = parseInt(depthMatch[1]);
+                        return {
+                            ...trace,
+                            visible: traceDepth <= maxDepth
+                        };
+                    }
+                }
+                return trace;
+            });
+            
+            Plotly.react('mindmapGraph', filteredData, {
+                ...currentData.layout,
+                height: 580
+            });
         }
         
         function resetMindmapView() {
+            // Reset depth filter
+            document.getElementById('mindmapDepthFilter').value = 'all';
+            
+            // Re-render current view
+            renderMindmapView(currentMindmapView);
+            
+            // Reset zoom
             if (document.getElementById('mindmapGraph')) {
                 Plotly.relayout('mindmapGraph', {
                     'xaxis.autorange': true,
@@ -1908,11 +2214,12 @@ SHADCN_DASHBOARD_HTML = '''
         }
         
         function exportMindmapPNG() {
+            const filename = currentMindmapView === 'tree' ? 'tsm_tree_hierarchy' : 'tsm_radial_mindmap';
             Plotly.downloadImage('mindmapGraph', {
                 format: 'png',
                 width: 1400,
                 height: 800,
-                filename: 'tsm_mindmap'
+                filename: filename
             });
         }
         
@@ -2045,6 +2352,7 @@ def dashboard_home():
     depth_chart_json = create_depth_bar_chart(stats)
     section_chart_json = create_section_pie_chart(audit_data)
     mindmap_json = create_mindmap_plotly(df, max_nodes=100)
+    tree_hierarchy_json = create_tree_hierarchy_plotly(df, max_nodes=100)
     treemap_json = create_treemap_chart(df)
 
     table_data = df.to_dict("records") if not df.empty else []
@@ -2063,6 +2371,7 @@ def dashboard_home():
         depth_chart_json=depth_chart_json,
         section_chart_json=section_chart_json,
         mindmap_json=mindmap_json,
+        tree_hierarchy_json=tree_hierarchy_json,
         treemap_json=treemap_json,
         table_data=table_data[:100],
     )
